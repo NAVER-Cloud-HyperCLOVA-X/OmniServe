@@ -1,0 +1,22 @@
+{
+  "continuous_audio_config_path": "app/model/configs/audio_config.json",
+  "models_weight": {
+    "continuous_audio": {
+      "path": "app/model/weights/audio_weights.pt"
+    },
+    "discrete_audio": {
+      "path": "app/model/weights/discrete_audio_weights.pt"
+    }
+  },
+  "discrete_audio_config": {
+    "model_name_or_path": "app/model/weights/discrete_audio_weights.pt",
+    "model_type": "cosyvoice2",
+    "torch_dtype": "bfloat16"
+  },
+  "audio_processor_path": "app/model/weights/qwen2-audio-encoder-from-qwen2-audio-7b-instruct",
+  "audio_projector_weight_path": "app/model/weights/audio_projector_weights.pt",
+  "llm_hidden_size": 4096,
+  "warmup_audio_paths": [],
+  "model_id": "default"
+}
+

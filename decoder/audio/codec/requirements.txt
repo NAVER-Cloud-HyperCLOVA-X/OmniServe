@@ -1,0 +1,14 @@
+captum==0.6.0  # for torchserve
+einops==0.8.1
+librosa==0.10.2.post1
+numpy>=1.24.2,<2.3
+nvgpu==0.10.0  # for torchserve
+psutil==5.9.8  # for torchserve
+pydub==0.25.1
+pynvml==11.5.0  # for torchserve
+pyyaml==6.0.1  # for torchserve
+requests==2.32.3
+scipy<=1.13.1
+torch==2.5.1
+torchserve==0.12
+triton==3.1.0; sys_platform == 'linux'  # for torch and torchserve

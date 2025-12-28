@@ -1,0 +1,134 @@
+name: Deploy to S3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**'
+      - '.github/workflows/deploy-to-s3.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          cache: 'pip'
+
+      - name: Install package dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install boto3 botocore requests redis
+
+      - name: Install wbl_storage_utility from source
+        run: |
+          pip install -e .
+
+      - name: Upload source code to S3 using wbl_storage_utility
+        env:
+          NCP_S3_ACCESS_KEY: ${{ secrets.NCP_S3_ACCESS_KEY }}
+          NCP_S3_SECRET_KEY: ${{ secrets.NCP_S3_SECRET_KEY }}
+          NCP_S3_ENDPOINT: ${{ secrets.NCP_S3_ENDPOINT }}
+          NCP_S3_REGION: ${{ secrets.NCP_S3_REGION }}
+          WBL_S3_BUCKET_NAME: ${{ secrets.WBL_S3_BUCKET_NAME }}
+        run: |
+          python << 'EOF'
+          import os
+          from pathlib import Path
+          from wbl_storage_utility.s3_util import S3Connection, S3ConnectionError
+
+          # 환경 변수 확인
+          access_key = os.getenv('NCP_S3_ACCESS_KEY')
+          secret_key = os.getenv('NCP_S3_SECRET_KEY')
+          
+          if not access_key or not secret_key:
+              raise ValueError("NCP_S3_ACCESS_KEY and NCP_S3_SECRET_KEY must be set in GitHub Secrets")
+
+          try:
+              # wbl_storage_utility의 S3Connection 사용
+              s3_conn = S3Connection()
+              bucket_name = s3_conn.bucket_name
+              
+              print(f"Using bucket: {bucket_name}")
+              print(f"Using endpoint: {s3_conn.endpoint_url}")
+
+              # 소스 코드 디렉토리
+              source_dir = Path('wbl_storage_utility')
+              s3_prefix = 'wbl_storage_utility'
+
+              if not source_dir.exists():
+                  raise ValueError(f"Source directory not found: {source_dir}")
+
+              # 업로드할 파일 목록 (Python 파일 및 __init__.py 등)
+              files_to_upload = []
+              for ext in ['*.py', '*.toml', '*.md', '*.txt']:
+                  files_to_upload.extend(source_dir.rglob(ext))
+              
+              # 루트의 pyproject.toml, README.md도 포함
+              root_files = ['pyproject.toml', 'README.md']
+              for root_file in root_files:
+                  if Path(root_file).exists():
+                      files_to_upload.append(Path(root_file))
+
+              if not files_to_upload:
+                  raise ValueError("No source files found to upload")
+
+              print(f"Found {len(files_to_upload)} files to upload")
+
+              # 각 파일 업로드
+              for file_path in files_to_upload:
+                  # S3 키 생성 (wbl_storage_utility/로 시작)
+                  try:
+                      # wbl_storage_utility 내부 파일인지 확인
+                      if str(file_path).startswith(str(source_dir)):
+                          # wbl_storage_utility 내부 파일
+                          relative_path = file_path.relative_to(Path('.'))
+                      else:
+                          # 루트 파일
+                          relative_path = file_path
+                  except ValueError:
+                      # 상대 경로 변환 실패 시 절대 경로 사용
+                      relative_path = file_path
+                  
+                  s3_key = f"{s3_prefix}/{relative_path.as_posix()}"
+                  
+                  print(f"Uploading {file_path} to s3://{bucket_name}/{s3_key}")
+                  
+                  success = s3_conn.upload_file(
+                      storage_name=bucket_name,
+                      local_path=str(file_path),
+                      storage_path=s3_key
+                  )
+                  
+                  if success:
+                      print(f"✓ Successfully uploaded {file_path.name}")
+                  else:
+                      raise RuntimeError(f"Failed to upload {file_path}")
+
+              print(f"\n✓ All source code uploaded to s3://{bucket_name}/{s3_prefix}/")
+              
+          except S3ConnectionError as e:
+              print(f"❌ S3 Connection Error: {e}")
+              raise
+          except Exception as e:
+              print(f"❌ Error: {e}")
+              raise
+          EOF
+
+      - name: Upload source code artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-code
+          path: |
+            wbl_storage_utility/
+            pyproject.toml
+            README.md
+          retention-days: 7
+

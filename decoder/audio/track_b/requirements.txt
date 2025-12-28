@@ -1,0 +1,11 @@
+aiofiles==25.1.0
+aiohttp==3.11.10
+audioop-lts==0.2.2; python_version>='3.13'  # for pydub
+boto3==1.40.75
+botocore==1.40.75
+fastapi[standard]==0.120.2
+pydantic-settings==2.11.0
+pydub==0.25.1
+pydub-stubs==0.25.1.6
+types-boto3==1.40.75
+requests==2.32.3

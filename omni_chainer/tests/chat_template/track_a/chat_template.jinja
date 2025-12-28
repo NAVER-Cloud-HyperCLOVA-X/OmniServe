@@ -1,0 +1,137 @@
+{%- set ns_img = namespace(count=0) %}
+{%- set ns_vid = namespace(count=0) %}
+{%- if tools %}
+    {{- '<|im_start|>system\n' }}
+    {%- if messages[0].role == 'system' and messages[0].content is string %}
+        {{- messages[0].content + '\n\n' }}
+    {%- endif %}
+    {{- '# Tools\n\n' }}
+    {{- 'You may call one or more functions to assist with the user query.\n\n' }}
+    {{- 'You are provided with function signatures within <tools></tools> XML tags:\n' }}
+    {{- '<tools>\n' }}
+    {%- for tool in tools %}
+        {{- tool | tojson(ensure_ascii=False) }}
+    {%- endfor %}
+    {{- '\n</tools>\n\n' }}
+    {{- 'For each function call, output the function name and arguments within the following XML format:\n' }}
+    {{- '<tool_call>{function-name}\n' }}
+    {{- '<arg_key>{arg-key-1}</arg_key>\n' }}
+    {{- '<arg_value>{arg-value-1}</arg_value>\n' }}
+    {{- '<arg_key>{arg-key-2}</arg_key>\n' }}
+    {{- '<arg_value>{arg-value-2}</arg_value>\n' }}
+    {{- '...\n' }}
+    {{- '</tool_call><|im_end|>\n' }}
+{%- else %}
+    {%- if messages[0].role == 'system' %}
+        {{- '<|im_start|>system\n' + messages[0].content + '<|im_end|>\n' }}
+    {%- endif %}
+{%- endif %}
+{%- set ns = namespace(last_user_index=-1) %}
+{%- for m in messages %}
+    {%- if m.role == 'user' %}
+        {%- set ns.last_user_index = loop.index0 %}
+    {%- endif %}
+{%- endfor %}
+{%- for message in messages %}
+    {%- set content = message.get('content', '') or '' %}
+    {%- if (message.role == 'system' and not loop.first) %}
+        {{- '<|im_start|>' + message.role + '\n' + content + '<|im_end|>\n' }}
+    {%- elif message.role == 'user' %}
+        {{- '<|im_start|>user\n' }}
+        {%- if message['content'] is string %}
+            {{- message['content'] + '<|im_end|>\n' }}
+        {%- elif message['content'] is sequence %}
+            {%- for content in message['content'] %}
+                {%- if not loop.first %}
+                    {{- '\n' }}
+                {%- endif %}
+                {%- if content['type'] == 'image_url' %}
+                    {%- set media_url = content.get('image_url', {}).get('url', '') %}
+                    {%- set url_lower = media_url.lower() %}
+                    {%- set video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv', '.m4v'] %}
+                    {%- set ns_check = namespace(is_video=False) %}
+                    {%- for ext in video_extensions %}
+                        {%- if url_lower.endswith(ext) %}
+                            {%- set ns_check.is_video = True %}
+                        {%- endif %}
+                    {%- endfor %}
+                    {%- if ns_check.is_video %}
+                        {%- set video_id = 'video_%02d' % ns_vid.count %}
+                        {%- set ns_vid.count = ns_vid.count + 1 %}
+                        {%- set filename = media_url.split('/')[-1] %}
+                        {{- '<|mime_start|>{"id": "' + video_id + '", "type": "video/mp4", "filename": "' + filename + '"}<|mime_end|>\n' }}
+                        {{- '<|video_aux_start|>다음 중 video_duration은 비디오 길이 정보입니다. 참고하여 답변하세요. {"video_duration": "<|video_meta_duration|>"}<|video_aux_end|>\n'}}
+                        {{- '<|video_start|><|VIDEO_PAD|><|video_end|>\n'}}
+                    {%- else %}
+                        {%- set image_id = 'image_%02d' % ns_img.count %}
+                        {%- set ns_img.count = ns_img.count + 1 %}
+                        {%- set filename = media_url.split('/')[-1] %}
+                        {{- '<|mime_start|>{"id": "' + image_id + '", "type": "image/jpeg", "filename": "' + filename + '"}<|mime_end|>\n' }}
+                        {{- '<|image_start|><|IMAGE_PAD|><|image_end|>' }}
+                    {%- endif %}
+                {%- elif content['type'] == 'text' %}
+                    {{- content['text'] }}
+                {%- endif %}
+            {%- endfor %}
+            {{- '<|im_end|>\n'}}
+        {%- endif %}
+    {%- elif message.role == 'assistant' %}
+        {%- set reasoning_content = '' %}
+        {%- if message.get('reasoning_content') is string %}
+            {%- set reasoning_content = message.get('reasoning_content') %}
+        {%- else %}
+            {%- if '</think>' in content %}
+                {%- set reasoning_content = content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
+                {%- set content = content.split('</think>')[-1].lstrip('\n') %}
+            {%- endif %}
+        {%- endif %}
+        {%- if loop.index0 > ns.last_user_index %}
+            {%- if loop.last or reasoning_content %}
+                {{- '<|im_start|>' + message.role + '\n<think>\n' + reasoning_content.strip('\n') + '\n</think>\n\n' + content.lstrip('\n') }}
+            {%- else %}
+                {{- '<|im_start|>' + message.role + '\n' + content }}
+            {%- endif %}
+        {%- else %}
+            {{- '<|im_start|>' + message.role + '\n' + content }}
+        {%- endif %}
+        {%- if message.get('tool_calls') %}
+            {%- for tool_call in message.get('tool_calls', []) %}
+                {%- if not loop.first or content %}
+                    {{- '\n' }}
+                {%- endif %}
+                {%- if tool_call.get('function') %}
+                    {%- set tool_call = tool_call.get('function') %}
+                {%- endif %}
+                {{- '<tool_call>' + tool_call.get('name', '') + '\n' }}
+                {%- set _args = tool_call.get('arguments', {}) %}
+                {%- if _args is string %}
+                    {{- '<arguments>' + _args + '</arguments>\n' }}
+                {%- elif _args is mapping %}
+                    {%- for k, v in _args.items() %}
+                        {{- '<arg_key>' + k + '</arg_key>\n' }}
+                        {{- '<arg_value>' + (v | tojson(ensure_ascii=False) if v is not string else v) + '</arg_value>\n' }}
+                    {%- endfor %}
+                {%- endif %}
+                {{- '</tool_call>' }}
+            {%- endfor %}
+        {%- endif %}
+        {{- '<|im_end|>\n' }}
+    {%- elif message.role == 'tool' %}
+        {%- if loop.first or (messages[loop.index0 - 1].role != 'tool') %}
+            {{- '<|im_start|>tool' }}
+        {%- endif %}
+        {{- '\n<tool_response>' + message.get('name', '') + '\n' }}
+        {{- content }}
+        {{- '\n</tool_response>' }}
+        {%- if loop.last or (messages[loop.index0 + 1].role != 'tool') %}
+            {{- '<|im_end|>\n' }}
+        {%- endif %}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {%- if thinking is defined and thinking is true %}
+        {{- '<|im_start|>assistant\n<think>\n' }}
+    {%- else %}
+        {{- '<|im_start|>assistant\n<think>\n\n</think>\n\n' }}
+    {%- endif %}
+{%- endif %}

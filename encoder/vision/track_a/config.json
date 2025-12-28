@@ -1,0 +1,15 @@
+{
+  "processor_model_name_or_path": "app/model/configs/preprocessor_config.json",
+  "cont_config_path": "app/model/configs/32b_cont_config.yaml",
+  "models_weight": {
+    "vision_module": {
+      "path": "app/model/weights/vision_weights.pt"
+    },
+    "mm_projector": {
+      "path": "app/model/weights/mm_projector_weights.pt"
+    }
+  },
+  "llm_hidden_size": 5120,
+  "warmup_image_paths": []
+}
+

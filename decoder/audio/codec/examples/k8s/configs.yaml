@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audio-decoder
+data:
+  speaker_config.json: |
+    {
+      "audio_paths_or_urls_or_ids": {
+        "20-30": {
+          "f": "fkms",
+          "m": "mhwj"
+        },
+        "0-10": {
+          "f": "fkms",
+          "m": "mhwj"
+        },
+        "10": {
+          "f": "fkms",
+          "m": "mhwj"
+        },
+        "40-50": {
+          "f": "fkms",
+          "m": "mhwj"
+        },
+        "60-70": {
+          "f": "fkms",
+          "m": "mhwj"
+        }
+      }
+    }

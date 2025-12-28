@@ -1,0 +1,22 @@
+{
+  "activation_dropout": 0.0,
+  "activation_function": "gelu",
+  "architectures": [
+    "Qwen2AudioEncoder"
+  ],
+  "attention_dropout": 0.0,
+  "d_model": 1280,
+  "dropout": 0.0,
+  "encoder_attention_heads": 20,
+  "encoder_ffn_dim": 5120,
+  "encoder_layerdrop": 0.0,
+  "encoder_layers": 32,
+  "init_std": 0.02,
+  "max_source_positions": 1500,
+  "model_type": "qwen2_audio_encoder",
+  "num_hidden_layers": 32,
+  "num_mel_bins": 128,
+  "scale_embedding": false,
+  "torch_dtype": "float32",
+  "transformers_version": "4.45.0"
+}
