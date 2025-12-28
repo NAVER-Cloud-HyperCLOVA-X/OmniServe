@@ -1,0 +1,326 @@
+version: '3.8'
+services: 
+########################################################
+# TRACK A                                              #
+########################################################
+  vlm-encoder-vision-api:
+    env_file:
+      - .env
+    build:
+      dockerfile: docker/vlm_encoder_vision.dockerfile
+    image: vlm-encoder-vision-api:latest
+    container_name: vlm-encoder-vision-api
+    ports:
+      - "${VLM_ENCODER_VISION_API_PORT:-10004}:8000"
+    volumes:
+      - ${VLM_ENCODER_VISION_MODEL_PATH}:/workspace/app/model/weights:ro
+    environment:
+      - CONFIG_PATH=/workspace/config.json
+      - MODEL_ID=${VLM_ENCODER_VISION_MODEL_ID}
+    ipc: host
+    shm_size: '16gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    profiles:
+      - track-a
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - encoder-network
+
+  vlm:
+    env_file:
+      - .env
+    image: vllm:custom
+    build:
+      dockerfile: docker/vllm.dockerfile
+    container_name: vlm
+    runtime: nvidia
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["vllm serve /vllm-workspace/model --host 0.0.0.0  --chat-template-content-format=string  --enable-auto-tool-choice --tool-call-parser glm45 --port 10021 --tensor-parallel-size 2 --served-model-name track_a_model --trust-remote-code --reasoning-parser deepseek_v3 --enable-prompt-embeds --chat-template /vllm-workspace/chat_template.jinja --reasoning-config '{\"think_start_str\": \"<think>\", \"think_end_str\": \" Now formulate the answer.</think>\"}'"]
+    ports:
+      - "${VLM_LLM_PORT:-10021}:10021"
+    volumes:
+      - ./omni_chainer/tests/chat_template/track_a/chat_template.jinja:/vllm-workspace/chat_template.jinja:ro
+      - ${VLM_MODEL_PATH}:/vllm-workspace/model:ro
+    ipc: host
+    shm_size: '16gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1","2"]
+              capabilities: [gpu]
+    profiles:
+      - track-a
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10021/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s  # 30B 모델 로딩 시간 고려 (5분)
+    networks:
+      - encoder-network
+
+########################################################
+# TRACK B                                              #
+########################################################
+  omni-encoder-audio-api:
+    env_file:
+      - .env
+    build:
+      dockerfile: docker/omni_encoder_audio.dockerfile
+    image: omni-encoder-audio-api:latest
+    container_name: omni-encoder-audio-api
+    ports:
+      - "${OMNI_ENCODER_AUDIO_API_PORT:-10002}:8002"
+    volumes:
+      - ${OMNI_ENCODER_AUDIO_MODEL_PATH}:/workspace/app/model/weights:ro
+    environment:
+      - CONFIG_PATH=/workspace/config.json
+      - MODEL_ID=${OMNI_ENCODER_AUDIO_MODEL_ID}
+    ipc: host
+    shm_size: '16gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["4"]
+              capabilities: [gpu]
+    profiles:
+      - track-b
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - encoder-network
+
+  omni-encoder-vision-api:
+    env_file:
+      - .env
+    build:
+      dockerfile: docker/omni_encoder_vision.dockerfile
+    image: omni-encoder-vision-api:latest
+    container_name: omni-encoder-vision-api
+    ports:
+      - "${OMNI_ENCODER_VISION_API_PORT:-10064}:8000"
+    volumes:
+      - ${OMNI_ENCODER_VISION_MODEL_PATH}:/workspace/app/model/weights:ro
+    environment:
+      - CONFIG_PATH=/workspace/config.json
+      - MODEL_ID=${OMNI_ENCODER_VISION_MODEL_ID}
+    ipc: host
+    shm_size: '16gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["4"]
+              capabilities: [gpu]
+    profiles:
+      - track-b
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - encoder-network
+
+  omni-decoder-vision-api:
+    env_file:
+      - .env
+    build:
+      dockerfile: docker/omni_decoder_vision.dockerfile
+    image: omni-decoder-vision-api:latest
+    volumes:
+      - torch-cache:/app/.cache/torch
+      - ${OMNI_DECODER_VISION_MODEL_PATH}/scheduler:/app/track_b/scheduler:ro
+      - ${OMNI_DECODER_VISION_MODEL_PATH}/transformer:/app/track_b/transformer:ro
+      - ${OMNI_DECODER_VISION_MODEL_PATH}/transformer2:/app/track_b/transformer2:ro
+      - ${OMNI_DECODER_VISION_MODEL_PATH}/vae:/app/track_b/vae:ro
+      - ${OMNI_DECODER_VISION_MODEL_PATH}/token_embedder:/app/track_b/token_embedder:ro
+      - ${OMNI_DECODER_VISION_MODEL_PATH}/model_index.json:/app/track_b/model_index.json:ro
+    container_name: omni-decoder-vision-api
+    ports:
+      - "${OMNI_DECODER_VISION_API_PORT:-10063}:10063"
+    ipc: host
+    shm_size: '16gb'
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["5"]
+              capabilities: [gpu]
+    profiles:
+      - track-b
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10063/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s  # 모델 로딩 시간 고려 (3분)
+    networks:
+      - encoder-network
+
+  omni-decoder-audio-api:
+    env_file:
+      - .env
+    build:
+      dockerfile: docker/omni_decoder_audio.dockerfile
+    image: omni-decoder-audio-api:latest
+    container_name: omni-decoder-audio-api
+    depends_on:
+      - omni-decoder-audio-torchserve
+    volumes:
+      - ./decoder/audio/track_b/examples:/etc/config:ro
+    environment:
+      - ENDPOINT=http://omni-decoder-audio-torchserve:8081/predictions
+      - ZEROSHOT_MODEL=NCZSCosybigvganDecoder
+      - FINETUNED_MODEL=NCCosybigvganDecoder
+      - DEFAULT_SPEAKER=fkms
+      - SPEAKER_CONFIG_PATH=/etc/config/speaker_config.json
+    ports:
+      - "${OMNI_DECODER_AUDIO_API_PORT:-11180}:8000"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    profiles:
+      - track-b
+    networks:
+      - encoder-network
+
+  # Audio Decoder Track B Codec - TorchServe Backend
+  omni-decoder-audio-torchserve:
+    build:
+      context: ./decoder/audio/codec
+      dockerfile: Dockerfile
+    image: omni-decoder-audio-torchserve:latest
+    container_name: omni-decoder-audio-torchserve
+    command: [
+      "--foreground",
+      "--model-store", "/workspace/models",
+      "--models", "NCCosybigvganDecoder=NCCosybigvganDecoder.mar",
+      "NCZSCosybigvganDecoder=NCZSCosybigvganDecoder.mar",
+      "--ncs",
+      "--ts-config", "/app/config.properties"
+    ]
+    volumes:
+      - ${OMNI_DECODER_AUDIO_TORCHSERVE_MODEL_PATH}:/workspace/models:ro
+      - ./decoder/audio/codec/config.properties:/app/config.properties:ro
+    ports:
+      - "${OMNI_DECODER_AUDIO_TORCHSERVE_PORT:-11181}:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8081"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 4G
+          devices:
+            - driver: nvidia
+              device_ids: ["5"]
+              capabilities: [gpu]
+    profiles:
+      - track-b
+    networks:
+      - encoder-network
+  omni:
+    env_file:
+    - .env
+    image: vllm:custom
+    build:
+      dockerfile: docker/vllm.dockerfile
+    container_name: omni
+    runtime: nvidia
+    user: root
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["vllm serve /vllm-workspace/llm/model --enable-prompt-embeds --served-model-name track_b_model --chat-template-content-format=string --host 0.0.0.0 --port 10032 --trust-remote-code --enable-auto-tool-choice --tool-call-parser omni --reasoning-parser deepseek_v3 --chat-template /vllm-workspace/chat_template.jinja --reasoning-config '{\"think_start_str\": \"<think>\", \"think_end_str\": \"</think>\"}'"]
+    ports:
+      - "${OMNI_PORT:-10032}:10032"
+    volumes:
+      - ./omni_chainer/tests/chat_template/track_b/chat_template.jinja:/vllm-workspace/chat_template.jinja:ro
+      - ${OMNI_MODEL_PATH}:/vllm-workspace/llm/model:ro
+    ipc: host
+    shm_size: '16gb'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10032/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["6"]
+              capabilities: [gpu]
+    profiles:
+      - track-b
+    networks:
+      - encoder-network
+
+  omni-chainer:
+    env_file:
+      - .env
+    image: omni-chainer:latest
+    build:
+      dockerfile: docker/omni_chainer.dockerfile
+    container_name: omni-chainer
+    ports:
+      - "${OMNI_CHAINER_API_PORT:-8000}:8000"
+    environment:
+      - TRACK_A_LLM_ENDPOINT=http://vlm:10021/v1/chat/completions
+      - TRACK_A_VISION_ENCODING_ENDPOINT=http://vlm-encoder-vision-api:8000/process_image_or_video
+      - TRACK_B_AUDIO_ENCODING_ENDPOINT=http://omni-encoder-audio-api:8002/process_audio
+      - TRACK_B_VISION_ENCODING_ENDPOINT=http://omni-encoder-vision-api:8000/process_image_or_video
+      - TRACK_B_VISION_DECODING_ENDPOINT=http://omni-decoder-vision-api:10063/decode
+      - TRACK_B_AUDIO_DECODING_ENDPOINT=http://omni-decoder-audio-api:8000/predictions
+      - TRACK_B_LLM_ENDPOINT=http://omni:10032/v1/chat/completions
+    networks:
+      - encoder-network
+
+volumes:
+  torch-cache:
+    driver: local
+
+networks:
+  encoder-network:
+    driver: bridge

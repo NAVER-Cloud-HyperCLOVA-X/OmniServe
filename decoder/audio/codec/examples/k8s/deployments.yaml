@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audio-decoder
+  labels:
+    app: audio-decoder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: audio-decoder
+  template:
+    metadata:
+      labels:
+        app: audio-decoder
+    spec:
+      containers:
+      - name: decoder-api
+        image: your-registry/audiollm/decoder-api:v2  # TODO: Replace with your registry
+        imagePullPolicy: IfNotPresent
+        args:
+        - --port
+        - "8000"
+        env:
+        - name: ENDPOINT
+          value: http://localhost:8081/predictions
+        - name: ZEROSHOT_MODEL
+          value: NCZSCosybigvganDecoder
+        - name: FINETUNED_MODEL
+          value: NCCosybigvganDecoder
+        - name: DEFAULT_SPEAKER
+          value: fkms
+        - name: SPEAKER_CONFIG_PATH  # 생략 가능
+          value: /etc/config/speaker_config.json
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        resources:
+          limits:
+            cpu: "1"
+            memory: 2Gi
+          requests:
+            cpu: "0.5"
+            memory: 0.5Gi
+        volumeMounts:
+        - mountPath: /etc/config
+          name: etc-config
+      - name: codec
+        image: your-registry/audiollm/audiollm-torchserve:v12  # TODO: Replace with your registry
+        imagePullPolicy: IfNotPresent
+        args:
+        - --foreground
+        - --model-store
+        - /path/to/models/dir
+        - --models
+        - NCCosybigvganDecoder=NCCosybigvganDecoder.mar
+        - NCZSCosybigvganDecoder=NCZSCosybigvganDecoder.mar
+        - --ncs
+        - --ts-config
+        - /path/to/config.properties
+        ports:
+        - containerPort: 8081
+        readinessProbe:
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          tcpSocket:
+            port: 8081
+        resources:
+          limits:
+            cpu: "2"
+            memory: "8Gi"
+            nvidia.com/gpu: "1"
+          requests:
+            cpu: "1"
+            memory: "4Gi"
+            nvidia.com/gpu: "1"
+      volumes:
+      - name: etc-config
+        configMap:
+          name: audio-decoder
