@@ -170,13 +170,4 @@
     {%- if skip_reasoning is defined and skip_reasoning is true %}
         {{- '\n</think>\n\n' }}
     {%- endif %}
-    {%- if force_modalities is defined %}
-        {%- if force_modalities == 'image' %}
-            {{- '<tool_call>t2i_model_generation\n<arg_key>discrete_image_token</arg_key>\n<arg_value>\n<|discrete_image_start|>' }}
-        {%- elif force_modalities == 'audio_with_user_audio' %}
-            {{- '<user_transcript>' }}
-        {%- elif force_modalities == 'audio_without_user_audio' %}
-            {{- '<assistant_transcript>' }}
-        {%- endif %}
-    {%- endif %}
 {%- endif %}
