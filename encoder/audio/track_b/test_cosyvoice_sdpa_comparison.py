@@ -9,6 +9,10 @@ SDPA 사용 여부에 따른 MultiHeadAttention 결과 비교 테스트
 import torch
 import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from util.mac_support.device import get_device, get_device_name
+import sys
+import os
 
 # 현재 디렉토리를 path에 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -50,7 +54,7 @@ def test_qkv_attention_comparison():
     seq_len = 10
     n_state = 1280
     n_head = 20
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
     
     print(f"Device: {device}")
     print(f"Batch size: {batch_size}, Seq len: {seq_len}")
@@ -128,7 +132,7 @@ def test_full_attention_comparison():
     seq_len = 10
     n_state = 1280
     n_head = 20
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
     
     print(f"Device: {device}")
     print(f"Batch size: {batch_size}, Seq len: {seq_len}")
@@ -195,7 +199,7 @@ def test_scale_verification():
     seq_len = 5
     n_state = 1280
     n_head = 20
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
     
     D = n_state
     scale = (D // n_head) ** -0.25

@@ -26,6 +26,10 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from util.mac_support.device import get_device, get_device_name
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import Response
@@ -183,7 +187,7 @@ async def lifespan(app: FastAPI):
     """Load model on startup, cleanup on shutdown."""
     print("[INFO] Loading VisionTokenToImagePipeline...")
     model_dir = scripts_dir  # Use the same directory as the script
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = get_device_name()
     
     # Use bfloat16 for faster inference (16 sec vs 2 min without it)
     state.pipeline = VisionTokenToImagePipeline.from_pretrained(
@@ -214,8 +218,9 @@ async def lifespan(app: FastAPI):
         del state.pipeline
     if state.s3_connection is not None:
         del state.s3_connection
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if get_device_name() != "cpu":
+        from util.mac_support.device import empty_cache
+        empty_cache()
     print("[INFO] Pipeline unloaded.")
 
 
@@ -292,7 +297,7 @@ async def decode_output(request: VLMOutputRequest):
         generator = None
         seed = request.seed
         if seed is not None:
-            generator = torch.Generator(device="cuda" if torch.cuda.is_available() else "cpu")
+            generator = torch.Generator(device=get_device_name())
             generator.manual_seed(seed)
         
         # 만약 request 내부에 width, height가 들어오면, 이걸 사용하고, 아니면 parsed_width, parsed_height를 사용한다.
@@ -417,7 +422,7 @@ async def decode_output_base64(request: VLMOutputRequest):
         # 2. Set up generator for reproducibility
         generator = None
         if request.seed is not None:
-            generator = torch.Generator(device="cuda" if torch.cuda.is_available() else "cpu")
+            generator = torch.Generator(device=get_device_name())
             generator.manual_seed(request.seed)
         
         # 만약 request 내부에 width, height가 들어오면, 이걸 사용

@@ -26,6 +26,10 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from util.mac_support.device import get_device, get_device_name
 import torch.nn as nn
 import torch.nn.functional as F
 from diffusers import AutoencoderKL, DiffusionPipeline
@@ -43,7 +47,7 @@ logger = logging.getLogger("vision-decoder-api.pipeline")
 # Flash Attention support detection
 try:
     from torch.nn.attention import sdpa_kernel, SDPBackend
-    FLASH_ATTN_AVAILABLE = torch.cuda.is_available()
+    FLASH_ATTN_AVAILABLE = (get_device_name() == "cuda")
 except ImportError:
     FLASH_ATTN_AVAILABLE = False
     sdpa_kernel = None

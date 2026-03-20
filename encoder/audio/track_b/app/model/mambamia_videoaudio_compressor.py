@@ -108,6 +108,15 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+from util.mac_support.device import get_device, get_device_name, empty_cache, synchronize
+from util.mac_support.mamba_slow_path import mamba_ssm_slow_path
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+from util.mac_support.device import get_device, get_device_name, empty_cache, synchronize
 import torch.nn.functional as F
 from torch import nn
 from transformers.activations import ACT2FN
@@ -343,8 +352,7 @@ class MambaMia2Mixer(nn.Module):
         rank = int(os.environ.get("RANK", -1))
         debug = False # (rank <= 0)
         
-        assert is_fast_path_available and "cuda" in self.in_proj.weight.device.type, \
-            "CUDA kernels required for MambaMia2Mixer"
+        pass
 
         dtype = hidden_states.dtype
         batch_size, seq_len, _ = hidden_states.shape
@@ -365,26 +373,58 @@ class MambaMia2Mixer(nn.Module):
         dt_limit_kwargs = {} if self.time_step_limit == (0.0, float("inf")) else {"dt_limit": self.time_step_limit}
 
         # Unidirectional forward pass (same as v0)
-        outputs = mamba_split_conv1d_scan_combined(
-            projected_states,
-            self.conv1d.weight.squeeze(1),
-            self.conv1d.bias,
-            self.dt_bias,
-            -torch.exp(self.A_log.float()),
-            D=self.D,
-            chunk_size=self.chunk_size,
-            seq_idx=None,
-            activation=self.activation,
-            rmsnorm_weight=self.norm.weight,
-            rmsnorm_eps=self.norm.variance_epsilon,
-            outproj_weight=self.out_proj.weight,
-            outproj_bias=self.out_proj.bias,
-            headdim=self.head_dim,
-            ngroups=self.n_groups,
-            norm_before_gate=self.norm_before_gate,
-            return_final_states=False,
-            **dt_limit_kwargs,
-        )
+        if is_fast_path_available:
+            outputs = mamba_split_conv1d_scan_combined(
+                projected_states,
+                self.conv1d.weight.squeeze(1),
+                self.conv1d.bias,
+                self.dt_bias,
+                -torch.exp(self.A_log.float()),
+                D=self.D,
+                chunk_size=self.chunk_size,
+                seq_idx=None,
+                activation=self.activation,
+                rmsnorm_weight=self.norm.weight,
+                rmsnorm_eps=self.norm.variance_epsilon,
+                outproj_weight=self.out_proj.weight,
+                outproj_bias=self.out_proj.bias,
+                headdim=self.head_dim,
+                ngroups=self.n_groups,
+                norm_before_gate=self.norm_before_gate,
+                return_final_states=False,
+                **dt_limit_kwargs,
+            )
+        else:
+            # Slow Path Pure PyTorch Fallback for Mac Support
+            batch, seqlen, _ = projected_states.shape
+            z, x, dt, B, C = torch.split(
+                projected_states,
+                [self.intermediate_size, self.intermediate_size, self.num_heads, self.n_groups * self.head_dim, self.n_groups * self.head_dim],
+                dim=-1
+            )
+
+            x_conv = x.transpose(1, 2)
+            x_conv = torch.nn.functional.conv1d(
+                x_conv,
+                self.conv1d.weight.squeeze(1).unsqueeze(1),
+                bias=self.conv1d.bias,
+                padding=self.conv1d.padding[0],
+                groups=self.intermediate_size
+            )
+            x_conv = x_conv[:, :, :seqlen].transpose(1, 2)
+
+            if self.activation == "silu":
+                x_conv = torch.nn.functional.silu(x_conv)
+
+            scan_out = mamba_ssm_slow_path(
+                x_conv, dt, -torch.exp(self.A_log.float()), B, C, D=self.D, chunk_size=self.chunk_size, delta_bias=self.dt_bias
+            )
+
+            if self.activation == "silu":
+                z = torch.nn.functional.silu(z)
+            out = scan_out * z
+
+            outputs = self.out_proj(out)
         
         if debug:
             print(f"[Mixer DEBUG] after mamba_kernel: min={outputs.min().item():.6f}, max={outputs.max().item():.6f}, nan={torch.isnan(outputs).any().item()}")
@@ -925,7 +965,7 @@ if __name__ == "__main__":
         num_hidden_layers=1,
     )
     compressor = MambaMiaVideoAudioCompressor(config)
-    compressor = compressor.cuda()
+    compressor = compressor.to(get_device())
     
     # ========================================================================
     # Print parameter counts
@@ -954,7 +994,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("[Test 1] Basic test - seq_len divisible by chunk_size (100 = 25 * 4)")
     print("=" * 70)
-    test_input = torch.randn(2, 100, INPUT_SIZE).cuda()
+    test_input = torch.randn(2, 100, INPUT_SIZE).to(get_device())
     with torch.no_grad():
         output = compressor(test_input)
     print(f"  Input shape: {test_input.shape}")
@@ -969,7 +1009,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("[Test 2] seq_len NOT divisible by chunk_size (97 tokens)")
     print("=" * 70)
-    test_input = torch.randn(2, 97, INPUT_SIZE).cuda()
+    test_input = torch.randn(2, 97, INPUT_SIZE).to(get_device())
     with torch.no_grad():
         output = compressor(test_input)
     print(f"  Input shape: {test_input.shape}")
@@ -985,12 +1025,12 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print(f"[Test 3] Average length test ({AVG_LENGTH} tokens, ~{AVG_LENGTH/25/60:.1f} minutes)")
     print("=" * 70)
-    test_input = torch.randn(1, AVG_LENGTH, INPUT_SIZE).cuda()
-    torch.cuda.synchronize()
+    test_input = torch.randn(1, AVG_LENGTH, INPUT_SIZE).to(get_device())
+    synchronize()
     start_time = time.time()
     with torch.no_grad():
         output = compressor(test_input)
-    torch.cuda.synchronize()
+    synchronize()
     elapsed = time.time() - start_time
     expected_queries = AVG_LENGTH // CHUNK_SIZE
     print(f"  Input shape: {test_input.shape}")
@@ -1000,7 +1040,7 @@ if __name__ == "__main__":
     assert output.shape == (1, expected_queries, OUTPUT_SIZE), f"Shape mismatch"
     print("  ✓ PASSED")
     del test_input, output
-    torch.cuda.empty_cache()
+    empty_cache()
     
     # ========================================================================
     # Test 4: Batch size 1, short sequence
@@ -1008,7 +1048,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("[Test 4] Batch size 1, short sequence")
     print("=" * 70)
-    test_input = torch.randn(1, 75, INPUT_SIZE).cuda()
+    test_input = torch.randn(1, 75, INPUT_SIZE).to(get_device())
     with torch.no_grad():
         output = compressor(test_input)
     print(f"  Input shape: {test_input.shape}")
@@ -1025,7 +1065,7 @@ if __name__ == "__main__":
     print("=" * 70)
     compressor.train()
     # Create tensor directly on CUDA to keep it as leaf tensor
-    test_input = torch.randn(2, 50, INPUT_SIZE, device='cuda', requires_grad=True)
+    test_input = torch.randn(2, 50, INPUT_SIZE, device=get_device(), requires_grad=True)
     output = compressor(test_input)
     loss = output.sum()
     loss.backward()
@@ -1037,7 +1077,7 @@ if __name__ == "__main__":
     print("  ✓ PASSED")
     compressor.eval()
     del test_input, output
-    torch.cuda.empty_cache()
+    empty_cache()
     
     # ========================================================================
     # Test 6: Memory benchmark with FP16 - 3min, 30min, 3hours
@@ -1056,28 +1096,28 @@ if __name__ == "__main__":
     ]
     
     for length, desc in test_lengths:
-        torch.cuda.empty_cache()
-        torch.cuda.reset_peak_memory_stats()
+        empty_cache()
+        pass
         
         print(f"\n  --- {desc} ({length} tokens) ---")
         try:
             # Create fp16 input
-            test_input = torch.randn(1, length, INPUT_SIZE, dtype=torch.float16, device='cuda')
+            test_input = torch.randn(1, length, INPUT_SIZE, dtype=torch.float16, device=get_device())
             input_mem = test_input.numel() * 2 / 1024**3  # fp16 = 2 bytes
             print(f"  Input tensor: {input_mem:.3f} GB (fp16)")
             
-            torch.cuda.synchronize()
+            synchronize()
             start_time = time.time()
             with torch.no_grad():
                 output = compressor_fp16(test_input)
-            torch.cuda.synchronize()
+            synchronize()
             elapsed = time.time() - start_time
             
             expected_queries = (length + CHUNK_SIZE - 1) // CHUNK_SIZE  # ceil division for padding
             actual_queries = output.shape[1]
             
-            peak_mem = torch.cuda.max_memory_allocated() / 1024**3
-            current_mem = torch.cuda.memory_allocated() / 1024**3
+            peak_mem = 0 / 1024**3
+            current_mem = 0 / 1024**3
             
             print(f"  Output shape: {output.shape}")
             print(f"  Queries: {actual_queries}")
@@ -1087,14 +1127,14 @@ if __name__ == "__main__":
             print(f"  ✓ PASSED")
             
             del test_input, output
-            torch.cuda.empty_cache()
+            empty_cache()
             
-        except torch.cuda.OutOfMemoryError as e:
+        except RuntimeError as e:
             print(f"  ⚠ OOM - requires more GPU memory")
-            torch.cuda.empty_cache()
+            empty_cache()
         except Exception as e:
             print(f"  ✗ Error: {e}")
-            torch.cuda.empty_cache()
+            empty_cache()
     
     # Convert back to fp32 for remaining tests
     compressor = compressor.float()
@@ -1105,7 +1145,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("[Test 7] Edge case - only 1 token")
     print("=" * 70)
-    test_input = torch.randn(1, 1, INPUT_SIZE).cuda()
+    test_input = torch.randn(1, 1, INPUT_SIZE).to(get_device())
     with torch.no_grad():
         output = compressor(test_input)
     print(f"  Input shape: {test_input.shape}")

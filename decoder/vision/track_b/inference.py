@@ -19,6 +19,10 @@ import logging
 import sys
 from pathlib import Path
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from util.mac_support.device import get_device, get_device_name
 import numpy as np
 from PIL import Image
 
@@ -56,7 +60,7 @@ def inference(
     pipeline = VisionTokenToImagePipeline.from_pretrained(
         scripts_dir,
         torch_dtype=torch.bfloat16,
-    ).to("cuda")
+    ).to(get_device())
     
     # Log pipeline configuration
     logger.info(f"[Inference] Pipeline loaded. transformer2 available: {pipeline.transformer2 is not None}")

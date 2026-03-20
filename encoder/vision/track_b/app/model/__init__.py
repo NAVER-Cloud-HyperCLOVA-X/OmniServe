@@ -16,6 +16,18 @@ from urllib.parse import quote_plus
 
 import requests
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+from util.mac_support.device import get_device, get_device_name, custom_autocast, get_autocast_decorator
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../util"))
+from mac_support.device import get_device, get_device_name
+import torch
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), "../../../../../util"))
 import torch.nn as nn
 import yaml
 from PIL import Image
@@ -117,7 +129,7 @@ class Model:
             llm_hidden_size: Hidden dimension of the LLM (default: 4096)
         """
         # Setup device and dtype
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_device()
         self.llm_hidden_size = llm_hidden_size
         self.model_id = model_id
         # Convert relative paths to absolute paths
@@ -523,7 +535,7 @@ class Model:
             f"image_grid_thw shape={image_grid_thw.shape}, dtype={image_grid_thw.dtype}, device={image_grid_thw.device}"
         )
 
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=self.dtype, enabled=True):
+        with torch.no_grad(), custom_autocast(device_type=get_device_name(), dtype=self.dtype, enabled=True):
             continuous_output = self.continuous_vision_model(pixel_values_batch, grid_thw=image_grid_thw)
             continuous_feature = self.mm_projector(continuous_output)
 
@@ -534,7 +546,7 @@ class Model:
         resized_image = image.resize((384, 384), Image.BICUBIC)
         discrete_tensor = ToTensor()(resized_image).unsqueeze(0).to(self.device)
 
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=self.dtype, enabled=True):
+        with torch.no_grad(), custom_autocast(device_type=get_device_name(), dtype=self.dtype, enabled=True):
             discrete_output = self.discrete_vision_model(discrete_tensor)
             discrete_tokens = discrete_output["encoded"]
 
@@ -614,7 +626,7 @@ class Model:
             # logger.info(f"pixel_values_batch dtype: {pixel_values_batch.dtype}, shape: {pixel_values_batch.shape}")
             # logger.info(f"grid_thw_batch: {grid_thw_batch}")
 
-            with torch.no_grad(), torch.autocast(device_type="cuda", dtype=self.dtype, enabled=True):
+            with torch.no_grad(), custom_autocast(device_type=get_device_name(), dtype=self.dtype, enabled=True):
                 continuous_output_chunk = self.continuous_vision_model(pixel_values_batch, grid_thw=grid_thw_batch)
                 continuous_feature_chunk = self.mm_projector(continuous_output_chunk)
                 continuous_feature_list.append(continuous_feature_chunk)

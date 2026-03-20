@@ -6,6 +6,10 @@ import copy
 import inspect
 
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+from util.mac_support.device import get_device, get_device_name, custom_autocast, get_autocast_decorator
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
@@ -129,7 +133,7 @@ class SimVectorQuantizer(nn.Module):
     def set_stochastic_temperature(self, temperature):
         self.stochastic_temperature_inv = 1 / temperature
 
-    @torch.autocast(device_type="cuda", enabled=False)
+    @get_autocast_decorator(device_type=get_device_name(), enabled=False)
     def get_emb(self):
         emb = self.embedding_proj(self.embedding.weight)
         if self.l2_normalized:
@@ -137,7 +141,7 @@ class SimVectorQuantizer(nn.Module):
         # assert emb.dtype == torch.float32, f"Embedding weight dtype is {emb.dtype}, expected float32"
         return emb
 
-    @torch.autocast(device_type="cuda", enabled=False)
+    @get_autocast_decorator(device_type=get_device_name(), enabled=False)
     def forward(self, z):
         emb = self.get_emb()
         z = z.to(emb)

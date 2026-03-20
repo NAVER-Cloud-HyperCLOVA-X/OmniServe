@@ -18,6 +18,10 @@ import librosa
 import numpy as np
 import requests
 import torch
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../..")))
+from util.mac_support.device import get_device, get_device_name, custom_autocast, get_autocast_decorator
 import torch.nn as nn
 from transformers import AutoConfig, AutoModel, WhisperFeatureExtractor
 from transformers.models.qwen2_audio import Qwen2AudioEncoderConfig
@@ -92,7 +96,7 @@ class Model:
             model_id: Model ID for cache key generation
         """
         # Setup device and dtype
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = get_device()
         self.llm_hidden_size = llm_hidden_size
         self.model_id = model_id
         self.sample_rate = DEFAULT_SAMPLE_RATE
@@ -459,7 +463,7 @@ class Model:
         if self.video_audio_compressor is None:
             return continuous_feature
 
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=self.dtype, enabled=True):
+        with torch.no_grad(), custom_autocast(device_type=get_device_name(), dtype=self.dtype, enabled=True):
             seq_len = continuous_feature.shape[0]
             
             # 배치 차원 추가: (1, T_total, hidden_size)
@@ -492,7 +496,7 @@ class Model:
         audio_np = audio_tensor.cpu().numpy()
 
         # Continuous audio encoder: mel spectrogram 생성 및 처리
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=self.dtype, enabled=True):
+        with torch.no_grad(), custom_autocast(device_type=get_device_name(), dtype=self.dtype, enabled=True):
             # WhisperFeatureExtractor로 mel spectrogram 생성
             # 30초 단위로 chunking (qwen2audioencoder의 max_length가 30초)
             chunk_size = 30 * self.sample_rate
@@ -552,7 +556,7 @@ class Model:
             continuous_feature = self.audio_projector(continuous_feature)  # (T_total, d_model) -> (T_total, hidden_size)
 
         # Discrete audio encoder: raw audio 처리
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=self.dtype, enabled=True):
+        with torch.no_grad(), custom_autocast(device_type=get_device_name(), dtype=self.dtype, enabled=True):
             # 오디오를 device로 이동
             audio_tensor_device = audio_tensor.to(self.device)
             
