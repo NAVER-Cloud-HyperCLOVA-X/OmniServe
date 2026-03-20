@@ -128,6 +128,8 @@ OmniServe orchestrates multimodal inference by routing requests through encoders
 
 ### Hardware
 
+**Note for Mac Users**: Apple Silicon (M1/M2/M3) is supported natively via PyTorch MPS. Please follow the instructions in [README_MAC.md](README_MAC.md) instead of using Docker.
+
 | Model | Service | GPU | VRAM Required |
 |-------|---------|-----|---------------|
 | VLM | Vision Encoder | 1x GPU | ~8GB |
@@ -149,6 +151,9 @@ OmniServe orchestrates multimodal inference by routing requests through encoders
 - `jq` (for test scripts)
 
 ## Quick Start
+
+For standard NVIDIA GPU environments, follow the Docker Compose guide below.
+**For Apple Silicon (Mac)**, please see the [README_MAC.md](README_MAC.md) guide and execute `./run_mac.sh` instead of following the Docker steps.
 
 ### Step 1: Clone and Setup
 
