@@ -47,7 +47,7 @@ fi
 if [ -n "$OMNI_ENCODER_AUDIO_MODEL_PATH" ]; then
   echo "Starting Audio Encoder..."
   export MODEL_ID=${OMNI_ENCODER_AUDIO_MODEL_ID}
-  python3 -m uvicorn encoder.audio.track_b.app.main:app \
+  python3 -m uvicorn encoder.audio.track_b.app.server:app \
     --host 0.0.0.0 --port ${OMNI_ENCODER_AUDIO_API_PORT:-10002} \
     > logs/encoder_audio.log 2>&1 &
 fi
@@ -56,7 +56,7 @@ fi
 if [ -n "$OMNI_ENCODER_VISION_MODEL_PATH" ]; then
   echo "Starting Vision Encoder..."
   export MODEL_ID=${OMNI_ENCODER_VISION_MODEL_ID}
-  python3 -m uvicorn encoder.vision.track_b.app.main:app \
+  python3 -m uvicorn encoder.vision.track_b.app.server:app \
     --host 0.0.0.0 --port ${OMNI_ENCODER_VISION_API_PORT:-10064} \
     > logs/encoder_vision.log 2>&1 &
 fi
